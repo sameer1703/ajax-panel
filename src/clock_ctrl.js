@@ -3,6 +3,8 @@ import moment from 'moment';
 import _ from 'lodash';
 import './css/clock-panel.css!';
 
+import TableModel 'app/core/table_model';
+
 const panelDefaults = {
   mode: 'time',
   clockType: '24 hour',
@@ -33,6 +35,9 @@ export class ClockCtrl extends PanelCtrl {
     if (!(this.panel.countdownSettings.endCountdownTime instanceof Date)) {
       this.panel.countdownSettings.endCountdownTime = moment(this.panel.countdownSettings.endCountdownTime).toDate();
     }
+
+    console.log('table model', new TableModel());
+
     this.events.on('init-edit-mode', this.onInitEditMode.bind(this));
     this.updateClock();
   }
