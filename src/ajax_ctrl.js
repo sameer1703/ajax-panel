@@ -18,73 +18,28 @@ const panelDefaults = {
 };
 
 export class AjaxCtrl extends MetricsPanelCtrl {
-  constructor($scope, $injector, $q, templateSrv, $sce, $http) {
-    super($scope, $injector);
+  // constructor($scope, $injector, private templateSrv, private $sce) {
+  constructor($scope, $injector, templateSrv, $sce, $http) {
 
+    super($scope, $injector);
     this.$sce = $sce;
     this.$http = $http;
-    this.$q = $q;
     this.templateSrv = templateSrv;
 
     _.defaults(this.panel, panelDefaults);
+    _.defaults(this.panel.timeSettings, panelDefaults.timeSettings);
 
     this.events.on('init-edit-mode', this.onInitEditMode.bind(this));
     this.events.on('panel-initialized', this.onPanelInitalized.bind(this));
-
-    this.requestCount = 0;
+    this.events.on('refresh', this.onRefresh.bind(this));
+    this.events.on('render', this.onRender.bind(this));
   }
 
-  // Rather than issue a datasource query, we will call our ajax request
+  // This just skips trying to send the actual query.  perhaps there is a better way
   issueQueries(datasource) {
     this.updateTimeRange();
 
-    var url = this.templateSrv.replace(this.panel.url, this.panel.scopedVars); 
-    var params;
-    if(this.params_fn) {
-      params = this.params_fn( this );
-    }
-    //console.log( "onRender", this, params );
-
-    if(this.panel.method === 'iframe') {   
-      var width = this.resolution - 50;   
-      var height = this.height - 10;   
-      var src = encodeURI(url + '&' + $.param(params));   
-      var html = `<iframe width='${width}' height='${height}' frameborder='0' src=${src}><\/iframe>`;   
-      this.updateContent(html);   
-    }   
-    else {   
-      delete this.error;
-      this.requestCount++;
-      this.loading = true;
-      this.$http({
-        method: this.panel.method,
-        url: url,
-        params: params
-      }).then( response => {
-        var html = response.data;
-        if(this.display_fn) {
-          html = this.display_fn(this, response);
-        }
-        this.updateContent( html );
-        this.loading = false;
-      }, (err) => {
-        this.loading = false;
-        this.error = err; //.data.error + " ["+err.status+"]";
-      //  this.inspector = {error: err};
-
-        console.warn('error', err);
-        let body = '<h1>Error</h1><pre>' + JSON.stringify(err, null, " ") + "</pre>";
-        this.updateContent(body);
-      });
-    }
-
-    // Return empty results
-    return null; //this.$q.when( [] );
-  }
-
-  // Overrides the default handling
-  handleQueryResult(result) {
-    // Nothing. console.log('handleQueryResult', result);
+    //console.log('block issueQueries', datasource);
   }
 
   onPanelInitalized() {
@@ -109,28 +64,91 @@ export class AjaxCtrl extends MetricsPanelCtrl {
 
     if(this.panel.params_js) {
       try {
-        this.params_fn = new Function('ctrl', 'return ' + this.templateSrv.replace(this.panel.params_js, this.panel.scopedVars));
+        var self_params = this.panel.params_js;
+        var params = this.templateSrv.replace(self_params,this.panel.scopedVars);
+        // this.panel.params_js = params;
+        this.params_fn = new Function('ctrl', 'return ' + params);
       }
       catch( ex ) {
         console.warn('error parsing params_js', this.panel.params_js, ex );
         this.params_fn = null;
       }
     }
-    this.refresh();
+
+    this.onRefresh();
+  }
+
+  onRefresh() {
+    //console.log('refresh', this);
+    this.updateTimeRange();  // needed for the first call
+
+    var self = this;
+    var url = this.templateSrv.replace(self.panel.url, this.panel.scopedVars); 
+    var params;
+    if(this.params_fn) {
+      params = this.params_fn( this );
+    }
+    //console.log( "onRender", this, params );
+
+    if(self.panel.method === 'iframe') {   
+      var width = self.resolution - 50;   
+      var height = self.height - 10;   
+      var src = encodeURI(url + '&' + $.param(params));   
+      var html = `<iframe width='${width}' height='${height}' frameborder='0' src=${src}><\/iframe>`;   
+      self.updateContent(html);   
+    }   
+    else if(self.panel.method === 'GET') {   
+      this.$http({
+        method: this.panel.method,
+        url: url,
+        params: params
+      }).then(function successCallback(response) {
+        //console.log('success', response, self);
+        var html = response.data;
+        if(self.display_fn) {
+          html = self.display_fn(self, response);
+        }
+        self.updateContent( html );
+      }, function errorCallback(response) {
+        console.warn('error', response);
+        var body = '<h1>Error</h1><pre>' + JSON.stringify(response, null, " ") + "</pre>";
+        self.updateContent(body);
+      });
+    }
+    else if(self.panel.method === 'POST') {   
+      this.$http({
+        method: this.panel.method,
+        url: url,
+        data: params,
+        headers:{
+          'Content-Type':'application/json'
+        }
+      }).then(function successCallback(response) {
+        //console.log('success', response, self);
+        var html = response.data;
+        if(self.display_fn) {
+          html = self.display_fn(self, response);
+        }
+        self.updateContent( html );
+      }, function errorCallback(response) {
+        console.warn('error', response);
+        var body = '<h1>Error</h1><pre>' + JSON.stringify(response, null, " ") + "</pre>";
+        self.updateContent(body);
+      });
+    }
   }
 
   updateContent(html) {
-    if(_.isNil(html)) {
-      this.content = "";
-      return;
-    }
-
     try {
       this.content = this.$sce.trustAsHtml(this.templateSrv.replace(html, this.panel.scopedVars));
     } catch (e) {
       console.log('Text panel error: ', e);
       this.content = this.$sce.trustAsHtml(html);
     }
+  }
+
+  onRender() {
+    //console.log('render', this);
   }
 }
 
